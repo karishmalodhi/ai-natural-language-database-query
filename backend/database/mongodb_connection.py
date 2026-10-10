@@ -1,16 +1,30 @@
 from pymongo import MongoClient
 
-MONGO_URL = "mongodb://localhost:27017"
+
+MONGO_URL = (
+    "mongodb://ai_readonly:AI_ReadOnly_2026"
+    "@localhost:27017/ai_query_db"
+)
 
 client = MongoClient(MONGO_URL)
 
 db = client["ai_query_db"]
 collection = db["customers"]
 
-print("MongoDB connection setup ready!")
+
+print("Read-only MongoDB connection setup ready!")
+
 
 try:
     client.admin.command("ping")
-    print("MongoDB connected successfully!")
+
+    print(
+        "MongoDB read-only connection successful!"
+    )
+
 except Exception as e:
-    print("Connection failed:", e)
+
+    print(
+        "MongoDB connection failed:",
+        e
+    )

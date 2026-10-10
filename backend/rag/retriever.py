@@ -1,71 +1,188 @@
+import math
+import re
+
 from rag.knowledge import get_knowledge
 
 
-def retrieve_context(question):
-    knowledge = get_knowledge()
+# ==========================================
+# LOAD KNOWLEDGE BASE
+# ==========================================
 
-    question_words = question.lower().split()
+knowledge = get_knowledge()
 
-    # Common words that do not help in finding relevant knowledge
-    stop_words = {
-        "what",
-        "is",
-        "are",
-        "the",
-        "a",
-        "an",
-        "how",
-        "many",
-        "me",
-        "show",
-        "tell",
-        "give",
-        "from",
-        "of",
-        "to",
-        "in",
-        "on",
-        "for",
-        "customers",
-        "customer"
-    }
+knowledge_texts = [
+    item["text"]
+    for item in knowledge
+]
 
-    useful_words = [
-        word.strip("?,.!'\"")
-        for word in question_words
-        if word.strip("?,.!'\"") not in stop_words
-    ]
+
+# ==========================================
+# TEXT PREPROCESSING
+# ==========================================
+
+def tokenize(text):
+
+    text = text.lower()
+
+    words = re.findall(
+        r"[a-zA-Z0-9_]+",
+        text
+    )
+
+    return words
+
+
+# ==========================================
+# BUILD VOCABULARY
+# ==========================================
+
+vocabulary = set()
+
+for text in knowledge_texts:
+
+    vocabulary.update(
+        tokenize(text)
+    )
+
+vocabulary = sorted(vocabulary)
+
+
+word_to_index = {
+    word: index
+    for index, word in enumerate(vocabulary)
+}
+
+
+# ==========================================
+# CREATE TEXT VECTOR
+# ==========================================
+
+def create_vector(text):
+
+    words = tokenize(text)
+
+    vector = [0] * len(vocabulary)
+
+    for word in words:
+
+        if word in word_to_index:
+
+            index = word_to_index[word]
+
+            vector[index] += 1
+
+    return vector
+
+
+# ==========================================
+# CREATE KNOWLEDGE VECTORS
+# ==========================================
+
+knowledge_vectors = [
+    create_vector(text)
+    for text in knowledge_texts
+]
+
+
+# ==========================================
+# COSINE SIMILARITY
+# ==========================================
+
+def cosine_similarity(vector_a, vector_b):
+
+    dot_product = 0
+    magnitude_a = 0
+    magnitude_b = 0
+
+    for a, b in zip(vector_a, vector_b):
+
+        dot_product += a * b
+
+        magnitude_a += a * a
+
+        magnitude_b += b * b
+
+    magnitude_a = math.sqrt(magnitude_a)
+
+    magnitude_b = math.sqrt(magnitude_b)
+
+    if magnitude_a == 0 or magnitude_b == 0:
+
+        return 0.0
+
+    return (
+        dot_product
+        / (magnitude_a * magnitude_b)
+    )
+
+
+# ==========================================
+# VECTOR RAG RETRIEVER
+# ==========================================
+
+def retrieve_context(question, top_k=5):
+
+    question_vector = create_vector(
+        question
+    )
+
+    scored_results = []
+
+    for index, knowledge_vector in enumerate(
+        knowledge_vectors
+    ):
+
+        score = cosine_similarity(
+            question_vector,
+            knowledge_vector
+        )
+
+        scored_results.append(
+            (
+                score,
+                knowledge_texts[index]
+            )
+        )
+
+    # Highest similarity first
+    scored_results.sort(
+        key=lambda item: item[0],
+        reverse=True
+    )
 
     results = []
 
-    for item in knowledge:
+    for score, text in scored_results[:top_k]:
 
-        text = item["text"]
-        text_lower = text.lower()
-
-        score = 0
-
-        for word in useful_words:
-
-            if word in text_lower:
-                score += 1
-
+        # Ignore completely unrelated knowledge
         if score > 0:
-            results.append((score, text))
 
-    # Highest relevance first
-    results.sort(key=lambda x: x[0], reverse=True)
+            results.append(text)
 
-    return [text for score, text in results]
+    return results
 
+
+# ==========================================
+# TEST
+# ==========================================
 
 if __name__ == "__main__":
 
-    question = "Show me customers from Agra"
+    questions = [
+        "Show me customers from Agra",
+        "How many customers are there?",
+        "What is the age of the customer?",
+        "What are their names?"
+    ]
 
-    results = retrieve_context(question)
+    for question in questions:
 
-    print("===== RETRIEVED CONTEXT =====")
+        print("\n===================================")
+        print("QUESTION:", question)
+        print("===================================")
 
-    for result in results:
-        print(result)
+        results = retrieve_context(question)
+
+        for result in results:
+
+            print("\n", result)
