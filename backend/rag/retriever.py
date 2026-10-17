@@ -1,188 +1,170 @@
+
 import math
 import re
+from collections import Counter
 
 from rag.knowledge import get_knowledge
 
 
-# ==========================================
-# LOAD KNOWLEDGE BASE
-# ==========================================
-
-knowledge = get_knowledge()
-
-knowledge_texts = [
-    item["text"]
-    for item in knowledge
-]
-
-
-# ==========================================
-# TEXT PREPROCESSING
-# ==========================================
-
-def tokenize(text):
-
-    text = text.lower()
-
-    words = re.findall(
-        r"[a-zA-Z0-9_]+",
-        text
-    )
-
-    return words
-
-
-# ==========================================
-# BUILD VOCABULARY
-# ==========================================
-
-vocabulary = set()
-
-for text in knowledge_texts:
-
-    vocabulary.update(
-        tokenize(text)
-    )
-
-vocabulary = sorted(vocabulary)
-
-
-word_to_index = {
-    word: index
-    for index, word in enumerate(vocabulary)
+STOPWORDS = {
+    "a", "an", "the", "is", "are", "was", "were", "be", "been",
+    "am", "do", "does", "did", "how", "what", "which", "who",
+    "where", "when", "why", "can", "could", "would", "should",
+    "please", "me", "my", "i", "we", "you", "our", "to", "of",
+    "in", "on", "at", "for", "from", "with", "and", "or", "by",
+    "all", "show", "find", "get", "tell", "give", "list", "display"
 }
 
 
-# ==========================================
-# CREATE TEXT VECTOR
-# ==========================================
+def tokenize(text):
+    """Convert text into useful searchable terms."""
+    words = re.findall(r"[a-zA-Z0-9_]+", str(text).lower())
 
-def create_vector(text):
-
-    words = tokenize(text)
-
-    vector = [0] * len(vocabulary)
-
+    # Keep meaningful words and normalize simple plurals.
+    result = []
     for word in words:
+        if word in STOPWORDS or len(word) < 2:
+            continue
 
-        if word in word_to_index:
+        if word.endswith("ies") and len(word) > 4:
+            word = word[:-3] + "y"
+        elif word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+            word = word[:-1]
 
-            index = word_to_index[word]
+        result.append(word)
 
-            vector[index] += 1
+    return result
+
+
+def _get_chunks():
+    """Support knowledge stored as text, a list, or dictionaries."""
+    knowledge = get_knowledge()
+
+    if isinstance(knowledge, str):
+        return [knowledge] if knowledge.strip() else []
+
+    if isinstance(knowledge, dict):
+        knowledge = [knowledge]
+
+    chunks = []
+
+    if isinstance(knowledge, (list, tuple)):
+        for item in knowledge:
+            if isinstance(item, str):
+                if item.strip():
+                    chunks.append(item)
+            elif isinstance(item, dict):
+                text = item.get("content") or item.get("text")
+                if text:
+                    chunks.append(str(text))
+                else:
+                    chunks.append(
+                        " ".join(f"{key}: {value}" for key, value in item.items())
+                    )
+
+    return chunks
+
+
+def _vectorize(tokens, document_frequency, total_documents):
+    """Create a TF-IDF vector using only Python's standard library."""
+    counts = Counter(tokens)
+    total_terms = max(len(tokens), 1)
+    vector = {}
+
+    for word, count in counts.items():
+        tf = count / total_terms
+        idf = math.log(
+            (1 + total_documents) / (1 + document_frequency[word])
+        ) + 1
+        vector[word] = tf * idf
 
     return vector
 
 
-# ==========================================
-# CREATE KNOWLEDGE VECTORS
-# ==========================================
-
-knowledge_vectors = [
-    create_vector(text)
-    for text in knowledge_texts
-]
-
-
-# ==========================================
-# COSINE SIMILARITY
-# ==========================================
-
-def cosine_similarity(vector_a, vector_b):
-
-    dot_product = 0
-    magnitude_a = 0
-    magnitude_b = 0
-
-    for a, b in zip(vector_a, vector_b):
-
-        dot_product += a * b
-
-        magnitude_a += a * a
-
-        magnitude_b += b * b
-
-    magnitude_a = math.sqrt(magnitude_a)
-
-    magnitude_b = math.sqrt(magnitude_b)
-
-    if magnitude_a == 0 or magnitude_b == 0:
-
+def _cosine_similarity(first, second):
+    """Measure similarity between two sparse TF-IDF vectors."""
+    if not first or not second:
         return 0.0
 
-    return (
-        dot_product
-        / (magnitude_a * magnitude_b)
+    dot_product = sum(
+        value * second.get(word, 0.0)
+        for word, value in first.items()
     )
 
+    first_norm = math.sqrt(sum(value * value for value in first.values()))
+    second_norm = math.sqrt(sum(value * value for value in second.values()))
 
-# ==========================================
-# VECTOR RAG RETRIEVER
-# ==========================================
+    if first_norm == 0 or second_norm == 0:
+        return 0.0
 
-def retrieve_context(question, top_k=5):
+    return dot_product / (first_norm * second_norm)
 
-    question_vector = create_vector(
-        question
+
+def retrieve_context(query, top_k=5):
+    """
+    Retrieve the most relevant knowledge chunks for a user question.
+    Offline TF-IDF and cosine similarity; no external model required.
+    """
+    chunks = _get_chunks()
+
+    if not chunks or not str(query).strip():
+        return ""
+
+    tokenized_chunks = [tokenize(chunk) for chunk in chunks]
+    query_tokens = tokenize(query)
+
+    if not query_tokens:
+        return ""
+
+    document_frequency = Counter()
+    for tokens in tokenized_chunks:
+        document_frequency.update(set(tokens))
+
+    total_documents = len(chunks)
+
+    query_vector = _vectorize(
+        query_tokens, document_frequency, total_documents
     )
 
-    scored_results = []
+    ranked = []
 
-    for index, knowledge_vector in enumerate(
-        knowledge_vectors
-    ):
-
-        score = cosine_similarity(
-            question_vector,
-            knowledge_vector
+    for index, tokens in enumerate(tokenized_chunks):
+        document_vector = _vectorize(
+            tokens, document_frequency, total_documents
         )
 
-        scored_results.append(
-            (
-                score,
-                knowledge_texts[index]
-            )
-        )
+        score = _cosine_similarity(query_vector, document_vector)
 
-    # Highest similarity first
-    scored_results.sort(
-        key=lambda item: item[0],
-        reverse=True
-    )
+        # Small bonus when an important query phrase occurs in a chunk.
+        normalized_chunk = chunks[index].lower()
+        normalized_query = str(query).lower().strip()
 
-    results = []
+        if normalized_query and normalized_query in normalized_chunk:
+            score += 0.15
 
-    for score, text in scored_results[:top_k]:
-
-        # Ignore completely unrelated knowledge
         if score > 0:
+            ranked.append((score, index, chunks[index]))
 
-            results.append(text)
+    ranked.sort(key=lambda item: item[0], reverse=True)
 
-    return results
+    limit = max(1, int(top_k))
+    return "\n\n".join(item[2] for item in ranked[:limit])
 
-
-# ==========================================
-# TEST
-# ==========================================
 
 if __name__ == "__main__":
-
     questions = [
-        "Show me customers from Agra",
-        "How many customers are there?",
-        "What is the age of the customer?",
-        "What are their names?"
+        "What columns are in the customers table?",
+        "Find customers from Agra",
+        "How can I filter customers by age?",
+        "What does the email field mean?",
     ]
 
     for question in questions:
+        print(f"\nQuestion: {question}")
+        context = retrieve_context(question)
 
-        print("\n===================================")
-        print("QUESTION:", question)
-        print("===================================")
-
-        results = retrieve_context(question)
-
-        for result in results:
-
-            print("\n", result)
+        if context:
+            print("Retrieved context:")
+            print(context)
+        else:
+            print("No matching context found.")
