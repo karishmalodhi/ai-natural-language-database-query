@@ -36,7 +36,7 @@ class ChatRequest(BaseModel):
 
     question: str
 
-    database: str = "postgresql"
+    database: str = "auto"
 
     conversation: list = []
 
@@ -217,7 +217,28 @@ def chat(request: ChatRequest):
                 "error":
                 "Please enter a question."
             }
+        # Block write or destructive requests
+        question_lower = request.question.lower()
 
+        dangerous_terms = (
+            "delete", "drop", "truncate",
+            "update", "insert", "remove", "alter"
+        )
+
+        if any(term in question_lower for term in dangerous_terms):
+            return {
+                "success": False,
+                "error": "Write operations are not allowed. This system is read-only."
+            }
+
+        # Automatic database selection
+        selected_database = request.database.lower().strip()
+
+        if selected_database == "auto":
+            if "mongo" in question_lower:
+                selected_database = "mongodb"
+            else:
+                selected_database = "postgresql"
 
         # ==================================
         # CLARIFICATION CHECK
@@ -277,7 +298,7 @@ def chat(request: ChatRequest):
         # MONGODB
         # ==================================
 
-        if request.database.lower() == "mongodb":
+        if selected_database == "mongodb":
 
             mongo_question = (
 
