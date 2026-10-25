@@ -1,453 +1,592 @@
-const input = document.getElementById("queryInput");
-const executeBtn = document.getElementById("executeBtn");
 
+"use strict";
 
-// ================================
-// DATABASE SELECTOR
-// ================================
+const API = "http://127.0.0.1:8000";
 
-let selectedDatabase = "postgresql";
+const $ = (selector) => document.querySelector(selector);
 
-const databaseSelector = document.createElement("select");
+const input = $("#queryInput");
+const executeBtn = $("#executeBtn");
+const databaseSelector = $("#databaseSelector");
 
-databaseSelector.id = "databaseSelector";
+let selectedDatabase = databaseSelector?.value || "postgresql";
+let conversationHistory = [];
+let queryHistory = [];
+let statsRefreshInterval = null;
 
-databaseSelector.innerHTML = `
-    <option value="postgresql">PostgreSQL</option>
-    <option value="mongodb">MongoDB</option>
-`;
+// ---------------- DATABASE SELECTION ----------------
 
-databaseSelector.style.marginBottom = "15px";
-databaseSelector.style.padding = "10px 14px";
-databaseSelector.style.borderRadius = "8px";
-databaseSelector.style.background = "#111827";
-databaseSelector.style.color = "#ffffff";
-databaseSelector.style.border = "1px solid rgba(99, 216, 255, 0.4)";
-databaseSelector.style.fontSize = "14px";
-databaseSelector.style.cursor = "pointer";
+function updateDatabaseUI() {
+    const isMongo = selectedDatabase.toLowerCase().includes("mongo");
 
-if (input && input.parentElement) {
-    input.parentElement.insertBefore(databaseSelector, input);
+    const badge = $("#selectedDbBadge");
+    const core = $("#databaseCoreLabel");
+    const relationDb = $("#relationDatabase");
+
+    if (badge) badge.textContent = isMongo ? "MONGODB" : "POSTGRESQL";
+    if (core) core.textContent = isMongo ? "MONGO" : "PG";
+    if (relationDb) relationDb.textContent = isMongo ? "MONGODB" : "POSTGRESQL";
+
+    const status = $("#databaseStatus");
+    if (status) {
+        status.classList.remove("active-status");
+        status.querySelector("span")?.style.setProperty("background", "#637086");
+    }
 }
 
-databaseSelector.addEventListener("change", () => {
-
+databaseSelector?.addEventListener("change", () => {
     selectedDatabase = databaseSelector.value;
-
-    // New database = new conversation context
     conversationHistory = [];
-
-    console.log("Selected Database:", selectedDatabase);
-
+    updateDatabaseUI();
 });
 
+// ---------------- MESSAGES ----------------
 
-// ================================
-// CONVERSATION MEMORY
-// ================================
+function showMessage(message, isError = false) {
+    const box = $("#dynamicResult");
+    if (!box) return;
 
-let conversationHistory = [];
+    box.hidden = false;
+    box.replaceChildren();
 
+    const heading = document.createElement("h3");
+    heading.textContent = isError ? "Request Error" : "Information";
+    box.appendChild(heading);
 
-// ================================
-// SUGGESTION BUTTONS
-// ================================
+    const paragraph = document.createElement("p");
+    paragraph.textContent = message;
+    paragraph.style.color = isError ? "#ff8585" : "#8ee5ff";
+    box.appendChild(paragraph);
+}
 
-const suggestionButtons = document.querySelectorAll(".suggestions button");
+function addResultText(box, tag, text) {
+    const element = document.createElement(tag);
+    element.textContent = text ?? "";
+    box.appendChild(element);
+    return element;
+}
 
-suggestionButtons.forEach((button) => {
+// ---------------- RESULT TABLE ----------------
 
-    button.addEventListener("click", () => {
+function renderResults(box, results) {
+    addResultText(box, "h4", "Database Results");
 
-        input.value = button.innerText;
-        input.focus();
+    if (results == null) {
+        addResultText(box, "p", "No result data was returned.");
+        return;
+    }
 
+    if (!Array.isArray(results)) {
+        if (typeof results === "object") {
+            results = [results];
+        } else {
+            addResultText(box, "p", String(results));
+            return;
+        }
+    }
+
+    if (results.length === 0) {
+        addResultText(box, "p", "Query completed. No rows returned.");
+        return;
+    }
+
+    if (typeof results[0] !== "object" || results[0] === null) {
+        const pre = document.createElement("pre");
+        pre.textContent = JSON.stringify(results, null, 2);
+        box.appendChild(pre);
+        return;
+    }
+
+    const columns = [...new Set(results.flatMap(row => Object.keys(row)))];
+
+    if (!columns.length) {
+        addResultText(box, "p", "Query completed. No columns to display.");
+        return;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "result-table-wrap";
+
+    const table = document.createElement("table");
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+
+    columns.forEach(column => {
+        const th = document.createElement("th");
+        th.textContent = column;
+        headerRow.appendChild(th);
     });
 
-});
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
 
+    const tbody = document.createElement("tbody");
 
-// ================================
-// EXECUTE QUERY
-// ================================
+    results.forEach(row => {
+        const tr = document.createElement("tr");
 
-executeBtn.addEventListener("click", executeQuery);
+        columns.forEach(column => {
+            const td = document.createElement("td");
+            const value = row[column];
 
+            td.textContent = value == null
+                ? "—"
+                : typeof value === "object"
+                    ? JSON.stringify(value)
+                    : String(value);
 
-// ================================
-// ENTER KEY
-// ================================
+            tr.appendChild(td);
+        });
 
-input.addEventListener("keydown", (event) => {
+        tbody.appendChild(tr);
+    });
 
-    if (event.key === "Enter") {
-        executeQuery();
+    table.appendChild(tbody);
+    wrapper.appendChild(table);
+    box.appendChild(wrapper);
+
+    addResultText(box, "p", `Rows returned: ${results.length}`);
+}
+
+// ---------------- DISPLAY QUERY RESPONSE ----------------
+
+function showQueryResult(data) {
+    const box = $("#dynamicResult");
+    if (!box) return;
+
+    box.hidden = false;
+    box.replaceChildren();
+
+    addResultText(box, "h3", "AI Answer");
+    addResultText(box, "p", data.answer || "Query completed.");
+
+    addResultText(
+        box,
+        "p",
+        `Database: ${data.database || selectedDatabase}`
+    );
+
+    addResultText(
+        box,
+        "p",
+        `Question: ${data.question || ""}`
+    );
+
+    const isMongo = String(data.database || selectedDatabase)
+        .toLowerCase()
+        .includes("mongo");
+
+    addResultText(
+        box,
+        "h4",
+        isMongo ? "Generated MongoDB Query" : "Generated SQL"
+    );
+
+    const query = data.query ?? data.sql ?? "Query details unavailable";
+    const pre = document.createElement("pre");
+
+    pre.textContent = typeof query === "object"
+        ? JSON.stringify(query, null, 2)
+        : String(query);
+
+    box.appendChild(pre);
+
+    renderResults(box, data.results);
+
+    updateDashboardFromQuery(data);
+}
+
+// ---------------- DASHBOARD QUERY PANEL ----------------
+
+function updateDashboardFromQuery(data) {
+    const queryBox = $("#sqlPreview");
+    const queryTime = $("#queryExecutionTime");
+    const relationTable = $("#relationTable");
+    const badge = $("#selectedDbBadge");
+    const connectionBadge = $("#connectionBadge");
+
+    const database = String(data.database || selectedDatabase);
+    const isMongo = database.toLowerCase().includes("mongo");
+    const query = data.query ?? data.sql ?? "Query details unavailable";
+
+    if (queryBox) {
+        queryBox.replaceChildren();
+
+        const pre = document.createElement("pre");
+        pre.style.cssText = `
+            margin: 0;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            background: transparent;
+            border: 0;
+            padding: 0;
+        `;
+
+        pre.textContent = typeof query === "object"
+            ? JSON.stringify(query, null, 2)
+            : String(query);
+
+        queryBox.appendChild(pre);
     }
 
-});
+    // Do not invent execution time if the backend does not return it.
+    if (queryTime) {
+        const actualTime = data.execution_time_ms ?? data.execution_time;
+        queryTime.textContent = actualTime != null
+            ? `${actualTime} ms`
+            : "Not provided";
+    }
 
+    if (badge) badge.textContent = isMongo ? "MONGODB" : "POSTGRESQL";
+    if (relationTable) relationTable.textContent = isMongo ? "CUSTOMERS COLLECTION" : "CUSTOMERS";
 
-// ================================
-// QUERY FUNCTION
-// ================================
+    if (connectionBadge) {
+        connectionBadge.textContent = "QUERY SUCCESSFUL";
+    }
 
-async function executeQuery() {
+    document.querySelectorAll(".journey-step").forEach(step => {
+        step.classList.add("completed");
+    });
+}
 
-    const question = input.value.trim();
+// ---------------- QUERY TIMELINE ----------------
+
+function addQueryToTimeline(question, data) {
+    const timeline = $("#queryTimeline");
+    if (!timeline) return;
+
+    const line = timeline.querySelector(".timeline-line");
+
+    const item = document.createElement("div");
+    item.className = "timeline-item dynamic-item active";
+
+    const dot = document.createElement("div");
+    dot.className = "timeline-dot";
+
+    const card = document.createElement("div");
+    card.className = "timeline-card active-card";
+
+    const title = document.createElement("span");
+    title.textContent = question;
+
+    const details = document.createElement("small");
+    details.textContent = data.database || selectedDatabase;
+
+    card.append(title, details);
+    item.append(dot, card);
+
+    timeline.querySelectorAll(".timeline-item").forEach(existing => {
+        existing.classList.remove("active");
+        existing.querySelector(".timeline-card")?.classList.remove("active-card");
+    });
+
+    item.addEventListener("click", () => {
+        if (input) {
+            input.value = question;
+            input.focus();
+        }
+    });
+
+    if (line?.nextSibling) {
+        timeline.insertBefore(item, line.nextSibling);
+    } else {
+        timeline.prepend(item);
+    }
+
+    queryHistory.unshift({ question, data });
+
+    while (timeline.querySelectorAll(".dynamic-item").length > 8) {
+        timeline.querySelector(".dynamic-item:last-of-type")?.remove();
+    }
+
+    if (line) timeline.prepend(line);
+}
+
+// ---------------- RUN QUERY ----------------
+
+async function executeQuery(questionOverride) {
+    if (!input || !executeBtn) return;
+
+    const question = String(questionOverride ?? input.value).trim();
 
     if (!question) {
-
         input.focus();
         return;
-
     }
 
-    const originalHTML = executeBtn.innerHTML;
+    selectedDatabase = databaseSelector?.value || selectedDatabase;
 
-    executeBtn.innerHTML = "Processing...";
     executeBtn.disabled = true;
+    const previousButtonContent = executeBtn.innerHTML;
+    executeBtn.textContent = "Processing...";
 
+    const startedAt = performance.now();
 
     try {
-
-        const response = await fetch("http://127.0.0.1:8000/chat", {
-
+        const response = await fetch(`${API}/chat`, {
             method: "POST",
-
             headers: {
                 "Content-Type": "application/json"
             },
-
             body: JSON.stringify({
-
-                question: question,
-
+                question,
                 database: selectedDatabase,
-
                 conversation: conversationHistory
-
             })
-
         });
-
 
         const data = await response.json();
 
-        console.log("BACKEND RESPONSE:", data);
-
-
-        if (data.success) {
-
-            executeBtn.innerHTML = "✓ Query Executed";
-
-            console.log("Database:", data.database);
-            console.log("Generated Query:", data.query || data.sql);
-            console.log("Database Result:", data.results);
-            console.log("AI Answer:", data.answer);
-
-
-            // ================================
-            // SAVE FULL CONVERSATION CONTEXT
-            // ================================
-
-            conversationHistory.push({
-
-                question: question,
-
-                query: data.query || data.sql || "",
-
-                results: data.results || [],
-
-                answer: data.answer || ""
-
-            });
-
-
-            // Keep only last 5 conversations
-            if (conversationHistory.length > 5) {
-
-                conversationHistory.shift();
-
-            }
-
-
-            console.log(
-                "CONVERSATION HISTORY:",
-                conversationHistory
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.error || data.detail || "Query failed"
             );
-
-
-            showQueryResult(data);
-
-            // Clear input for next question
-            input.value = "";
-
         }
 
-        else {
-
-            executeBtn.innerHTML = "✗ Query Failed";
-
-            showError(data.error);
-
-            console.error("Backend Error:", data.error);
-
-        }
-
-    }
-
-    catch (error) {
-
-        executeBtn.innerHTML = "✗ Backend Offline";
-
-        showError("Unable to connect to backend.");
-
-        console.error("CONNECTION ERROR:", error);
-
-    }
-
-
-    setTimeout(() => {
-
-        executeBtn.innerHTML = originalHTML;
-        executeBtn.disabled = false;
-
-    }, 1800);
-
-}
-
-
-// ================================
-// SHOW QUERY RESULT
-// ================================
-
-function showQueryResult(data) {
-
-    let resultBox = document.getElementById("dynamicResult");
-
-
-    if (!resultBox) {
-
-        resultBox = document.createElement("div");
-
-        resultBox.id = "dynamicResult";
-
-        resultBox.style.marginTop = "25px";
-        resultBox.style.padding = "20px";
-        resultBox.style.border = "1px solid rgba(99, 216, 255, 0.3)";
-        resultBox.style.borderRadius = "12px";
-        resultBox.style.background = "rgba(10, 20, 30, 0.8)";
-
-        executeBtn.parentElement.appendChild(resultBox);
-
-    }
-
-
-    const databaseName =
-        data.database === "mongodb"
-            ? "MongoDB"
-            : "PostgreSQL";
-
-
-    const generatedQuery =
-        data.database === "mongodb"
-            ? JSON.stringify(data.query, null, 2)
-            : data.sql;
-
-
-    let resultHTML = `
-
-        <h3>AI Answer</h3>
-
-        <p style="font-size: 20px;">
-            ${data.answer || "No answer generated."}
-        </p>
-
-        <p>
-            <strong>Database:</strong>
-            ${databaseName}
-        </p>
-
-        <p>
-            <strong>Question:</strong>
-            ${data.question}
-        </p>
-
-        <p>
-            <strong>
-                ${
-                    data.database === "mongodb"
-                        ? "Generated MongoDB Query:"
-                        : "Generated SQL:"
-                }
-            </strong>
-        </p>
-
-        <pre>${generatedQuery}</pre>
-
-        <p>
-            <strong>Database Result:</strong>
-        </p>
-
-    `;
-
-
-    if (data.results && data.results.length > 0) {
-
-        resultHTML += `
-
-            <pre>${JSON.stringify(data.results, null, 2)}</pre>
-
-        `;
-
-    }
-
-    else {
-
-        resultHTML += `
-
-            <p>No data found.</p>
-
-        `;
-
-    }
-
-
-    resultBox.innerHTML = resultHTML;
-
-}
-
-
-// ================================
-// SHOW ERROR
-// ================================
-
-function showError(message) {
-
-    let resultBox = document.getElementById("dynamicResult");
-
-
-    if (!resultBox) {
-
-        resultBox = document.createElement("div");
-
-        resultBox.id = "dynamicResult";
-
-        resultBox.style.marginTop = "25px";
-        resultBox.style.padding = "20px";
-        resultBox.style.border = "1px solid rgba(255, 80, 80, 0.4)";
-        resultBox.style.borderRadius = "12px";
-        resultBox.style.background = "rgba(30, 10, 10, 0.8)";
-
-        executeBtn.parentElement.appendChild(resultBox);
-
-    }
-
-
-    resultBox.innerHTML = `
-
-        <h3>Query Error</h3>
-
-        <p>${message}</p>
-
-    `;
-
-}
-
-
-// ================================
-// START INVESTIGATION
-// ================================
-
-const startButton = document.querySelector(".start-btn");
-
-
-if (startButton) {
-
-    startButton.addEventListener("click", () => {
-
-        input.value = "";
-        input.focus();
-
-        conversationHistory = [];
-
-    });
-
-}
-
-
-// ================================
-// DATABASE NODES
-// ================================
-
-const nodes = document.querySelectorAll(".table-node");
-
-
-nodes.forEach((node) => {
-
-    node.addEventListener("mouseenter", () => {
-
-        node.style.borderColor = "#63d8ff";
-        node.style.color = "#8ee5ff";
-        node.style.boxShadow = "0 0 18px rgba(83, 205, 244, 0.18)";
-
-    });
-
-
-    node.addEventListener("mouseleave", () => {
-
-        node.style.borderColor = "";
-        node.style.color = "";
-        node.style.boxShadow = "";
-
-    });
-
-});
-
-
-// ================================
-// TIMELINE
-// ================================
-
-const timelineItems = document.querySelectorAll(".timeline-item");
-
-
-timelineItems.forEach((item) => {
-
-    item.addEventListener("click", () => {
-
-        timelineItems.forEach((i) => {
-
-            i.classList.remove("active");
-
+        const elapsedMs = Math.round(performance.now() - startedAt);
+
+        conversationHistory.push({
+            question,
+            query: data.query ?? data.sql ?? "",
+            results: data.results ?? [],
+            answer: data.answer ?? ""
         });
 
-
-        item.classList.add("active");
-
-
-        const text = item.innerText
-            .replace("↓", "")
-            .trim();
-
-
-        if (text !== "NEW QUERY") {
-
-            input.value = text;
-            input.focus();
-
+        if (conversationHistory.length > 10) {
+            conversationHistory.shift();
         }
 
-        else {
+        showQueryResult(data);
+        addQueryToTimeline(question, data);
 
-            input.value = "";
-            input.focus();
-
+        // Show measured request duration only when API doesn't provide its own.
+        const timeElement = $("#queryExecutionTime");
+        if (
+            timeElement &&
+            data.execution_time_ms == null &&
+            data.execution_time == null
+        ) {
+            timeElement.textContent = `${elapsedMs} ms request`;
         }
 
-    });
+        input.value = "";
 
+    } catch (error) {
+        showMessage(
+            `Request failed: ${error.message}. Check the backend and database connection.`,
+            true
+        );
+
+        const badge = $("#connectionBadge");
+        if (badge) badge.textContent = "REQUEST FAILED";
+
+    } finally {
+        executeBtn.disabled = false;
+        executeBtn.innerHTML = previousButtonContent;
+
+        if (window.lucide) {
+            window.lucide.createIcons();
+        }
+    }
+}
+
+// ---------------- DASHBOARD LIVE STATS ----------------
+
+async function loadDashboardStats() {
+    const fresh = $(".fresh-data");
+    const number = $(".answer-number");
+    const title = $(".answer-title");
+    const location = $(".answer-location");
+    const badge = $("#connectionBadge");
+    const status = $("#databaseStatus");
+
+    try {
+        const response = await fetch(`${API}/api/dashboard/stats`);
+
+        if (!response.ok) {
+            throw new Error(`Stats API returned ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.success) {
+            throw new Error(data.error || "Stats unavailable");
+        }
+
+        if (number && data.total_customers != null) {
+            number.textContent =
+                Number(data.total_customers).toLocaleString();
+        }
+
+        if (title) {
+            title.textContent = "Total Customers";
+        }
+
+        if (location && data.total_cities != null) {
+            location.textContent =
+                `${data.total_cities} unique cities`;
+        }
+
+        if (fresh) {
+            fresh.textContent =
+                `Live statistics · ${data.database || "Database"} connected`;
+        }
+
+        if (badge) {
+            badge.textContent = "CONNECTED";
+        }
+
+        if (status) {
+            status.classList.add("active-status");
+            const label = status.childNodes;
+            status.title = "Database statistics API responded successfully";
+        }
+
+        console.log("Dashboard stats loaded:", data);
+
+    } catch (error) {
+        console.warn("Dashboard stats unavailable:", error.message);
+
+        if (fresh) {
+            fresh.textContent = "Live statistics unavailable";
+        }
+
+        if (badge) {
+            badge.textContent = "STATUS UNAVAILABLE";
+        }
+    }
+}
+
+// ---------------- BUTTONS & SUGGESTIONS ----------------
+
+executeBtn?.addEventListener("click", () => executeQuery());
+
+input?.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+        event.preventDefault();
+        executeQuery();
+    }
 });
 
+document.querySelectorAll(".suggestions button").forEach(button => {
+    button.addEventListener("click", () => {
+        if (!input) return;
 
-console.log("SCRIPT JS LOADED");
+        input.value = button.textContent.trim();
+        input.focus();
+    });
+});
+
+// Start a new conversation without deleting saved database records.
+$(".start-btn")?.addEventListener("click", () => {
+    conversationHistory = [];
+    queryHistory = [];
+
+    if (input) {
+        input.value = "";
+        input.focus();
+    }
+
+    const box = $("#dynamicResult");
+    if (box) {
+        box.hidden = true;
+        box.replaceChildren();
+    }
+
+    const timeline = $("#queryTimeline");
+
+    if (timeline) {
+        timeline.querySelectorAll(".dynamic-item").forEach(item => item.remove());
+
+        timeline.querySelectorAll(".timeline-item").forEach(item => {
+            item.classList.remove("active");
+            item.querySelector(".timeline-card")?.classList.remove("active-card");
+        });
+    }
+
+    const number = $(".answer-number");
+    const title = $(".answer-title");
+    const location = $(".answer-location");
+
+    if (number) number.textContent = "Ready";
+    if (title) title.textContent = "Ask your database in natural language";
+    if (location) location.textContent = "Submit a question to see results";
+
+    const queryBox = $("#sqlPreview");
+    if (queryBox) {
+        queryBox.textContent = "Generated query will appear here.";
+    }
+
+    const queryTime = $("#queryExecutionTime");
+    if (queryTime) queryTime.textContent = "Not measured";
+
+    document.querySelectorAll(".journey-step").forEach(step => {
+        step.classList.remove("completed");
+    });
+
+    updateDatabaseUI();
+});
+
+// Database diagram nodes
+document.querySelectorAll(".table-node").forEach(node => {
+    node.addEventListener("click", () => {
+        if (!input) return;
+
+        const database = selectedDatabase.toLowerCase();
+        const question = database.includes("mongo")
+            ? "Show all customers"
+            : "Show all customers with their name, city, age and email";
+
+        executeQuery(question);
+    });
+
+    node.setAttribute("role", "button");
+    node.setAttribute("tabindex", "0");
+
+    node.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            node.click();
+        }
+    });
+});
+
+// ---------------- INITIALIZATION ----------------
+
+updateDatabaseUI();
+loadDashboardStats();
+
+if (statsRefreshInterval) {
+    clearInterval(statsRefreshInterval);
+}
+
+statsRefreshInterval = setInterval(loadDashboardStats, 30000);
+
+if (window.lucide) {
+    window.lucide.createIcons();
+}
+
+console.log("DataMind AI initialized");
+document.addEventListener("DOMContentLoaded", () => {
+    const btn = document.getElementById("executeBtn");
+    const input = document.getElementById("queryInput");
+
+    if (btn && input) {
+        btn.addEventListener("click", () => {
+            if (typeof executeQuery === "function") {
+                executeQuery();
+            } else {
+                console.error("executeQuery function missing!");
+                alert("Query function load nahi hua. script.js check karo.");
+            }
+        });
+
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                btn.click();
+            }
+        });
+    } else {
+        console.error("Execute button ya query input nahi mila!");
+    }
+});

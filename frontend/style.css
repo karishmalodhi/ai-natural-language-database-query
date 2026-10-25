@@ -1003,3 +1003,192 @@ button {
         font-size: 7px;
     }
 }
+
+@media (max-width: 900px) {
+    .app {
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .sidebar {
+        width: 210px;
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .main {
+        padding: 12px;
+    }
+
+    .workspace {
+        height: auto;
+        min-height: calc(100vh - 71px);
+        flex-direction: column;
+        overflow: visible;
+    }
+
+    .chat-area {
+        padding: 18px;
+    }
+
+    .database-panel {
+        width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border);
+    }
+
+    .database-map {
+        max-width: 400px;
+        margin-inline: auto;
+    }
+
+    .suggestions {
+        flex-wrap: wrap;
+        overflow: visible;
+    }
+}
+
+@media (max-width: 600px) {
+    .app {
+        flex-direction: column;
+    }
+
+    .sidebar {
+        width: 100%;
+        min-height: auto;
+        height: auto;
+        padding: 12px 15px;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .brand {
+        height: 42px;
+    }
+
+    .start-btn {
+        margin-top: 12px;
+        padding: 10px;
+    }
+
+    .timeline-title,
+    .timeline {
+        display: none;
+    }
+
+    .main {
+        width: 100%;
+        padding: 10px;
+    }
+
+    .status-bar {
+        height: auto;
+        min-height: 40px;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    .status {
+        font-size: 8px;
+        padding: 0 7px;
+    }
+
+    .workspace {
+        border-radius: 10px;
+    }
+
+    .chat-area {
+        padding: 14px 10px;
+    }
+
+    .answer-wrapper {
+        padding-left: 0;
+    }
+
+    .ai-avatar {
+        display: none;
+    }
+
+    .answer-card {
+        min-height: auto;
+        padding: 18px 14px;
+    }
+
+    .answer-number {
+        font-size: 54px;
+        letter-spacing: -2px;
+        overflow-wrap: anywhere;
+    }
+
+    .fresh-data {
+        margin-left: 4px;
+    }
+
+    .journey-section {
+        padding: 14px 8px;
+    }
+
+    .journey {
+        gap: 2px;
+    }
+
+    .journey-step {
+        font-size: 6px;
+        letter-spacing: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .journey-step::after {
+        width: 65%;
+    }
+
+    .suggestions button {
+        white-space: normal;
+        max-width: 100%;
+    }
+
+    .input-box {
+        padding: 12px 10px;
+    }
+
+    .input-hint {
+        display: none;
+    }
+
+    .database-panel {
+        padding: 16px 12px;
+    }
+
+    .database-map {
+        height: 290px;
+    }
+}
+
+#databaseSelector {
+    max-width: 100%;
+    font-family: inherit;
+    outline: none;
+}
+
+#executeBtn:disabled,
+.execute-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+#dynamicResult {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+}
+
+#dynamicResult pre {
+    max-width: 100%;
+    overflow-x: auto;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 3px;
+}

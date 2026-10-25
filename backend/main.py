@@ -1,7 +1,10 @@
 from fastapi import FastAPI
+from database.connection import engine
+from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
+from fastapi import HTTPException
 from datetime import datetime
 
 from services.llm_service import (
@@ -678,3 +681,37 @@ def chat(request: ChatRequest):
 
             "error": str(e)
         }
+        
+from sqlalchemy import text
+from fastapi import HTTPException
+
+
+
+@app.get("/api/dashboard/stats")
+def dashboard_stats():
+    try:
+        with engine.connect() as connection:
+            total = connection.execute(
+                text("SELECT COUNT(*) FROM customers")
+            ).scalar_one()
+
+            cities = connection.execute(
+                text(
+                    "SELECT COUNT(DISTINCT city) "
+                    "FROM customers WHERE city IS NOT NULL"
+                )
+            ).scalar_one()
+
+        return {
+            "success": True,
+            "database": "PostgreSQL",
+            "status": "Connected",
+            "total_customers": total,
+            "total_cities": cities
+        }
+    except Exception as exc:
+        print("DASHBOARD ERROR:", repr(exc))
+        raise HTTPException(
+            status_code=503,
+            detail="Dashboard database query failed"
+        )

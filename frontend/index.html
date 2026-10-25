@@ -1,235 +1,444 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DataMind AI</title>
+    <meta name="theme-color" content="#050b14">
+    <meta name="description" content="DataMind AI - Natural Language Database Query System">
+    <title>DataMind AI | Database Intelligence</title>
 
     <link rel="stylesheet" href="style.css">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-
     <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Additional layout and result styling */
+        .database-selector-wrap {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        #databaseSelector {
+            max-width: 100%;
+            padding: 9px 12px;
+            color: #e7edf7;
+            background: #0d1929;
+            border: 1px solid rgba(98, 216, 255, .4);
+            border-radius: 8px;
+            outline: none;
+            font: inherit;
+            font-size: 12px;
+        }
+
+        #databaseSelector:focus,
+        #queryInput:focus {
+            border-color: #62d8ff;
+        }
+
+        #dynamicResult {
+            margin-top: 16px;
+            padding: 18px;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            color: #e7edf7;
+            background: rgba(8, 19, 32, .96);
+            border: 1px solid rgba(98, 216, 255, .25);
+            border-radius: 12px;
+        }
+
+        #dynamicResult h3 {
+            margin-bottom: 12px;
+            color: #62d8ff;
+            font-size: 16px;
+        }
+
+        #dynamicResult h4 {
+            margin: 18px 0 8px;
+            color: #a9bad0;
+            font-size: 12px;
+            letter-spacing: .5px;
+        }
+
+        #dynamicResult p {
+            margin: 7px 0;
+            color: #bdcadd;
+            font-size: 12px;
+            line-height: 1.7;
+        }
+
+        #dynamicResult pre {
+            max-width: 100%;
+            margin-top: 8px;
+            padding: 12px;
+            overflow: auto;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            color: #8ee5ff;
+            background: #050b14;
+            border: 1px solid rgba(125, 154, 190, .13);
+            border-radius: 8px;
+            font: 12px/1.7 Consolas, monospace;
+        }
+
+        #dynamicResult .result-table-wrap {
+            max-width: 100%;
+            margin-top: 8px;
+            overflow: auto;
+        }
+
+        #dynamicResult table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+
+        #dynamicResult th,
+        #dynamicResult td {
+            padding: 10px;
+            text-align: left;
+            border: 1px solid rgba(125, 154, 190, .18);
+            overflow-wrap: anywhere;
+        }
+
+        #dynamicResult th {
+            color: #62d8ff;
+            background: #0d1929;
+        }
+
+        #dynamicResult td {
+            color: #d4deeb;
+        }
+
+        #executeBtn:disabled,
+        .execute-btn:disabled {
+            opacity: .6;
+            cursor: wait;
+        }
+
+        .timeline-item.dynamic-item {
+            cursor: pointer;
+            overflow-wrap: anywhere;
+        }
+
+        .timeline-item.dynamic-item .timeline-card {
+            gap: 8px;
+            font-size: 11px;
+        }
+
+        .timeline-item.dynamic-item small {
+            display: block;
+            margin-top: 5px;
+            color: #758399;
+            font-size: 9px;
+        }
+
+        .database-map .table-node {
+            cursor: pointer;
+        }
+
+        .database-map .table-node:hover {
+            border-color: #62d8ff;
+            color: #dff8ff;
+        }
+
+        .fresh-data {
+            line-height: 1.6;
+        }
+
+        .status-value {
+            white-space: nowrap;
+        }
+
+        @media (max-width: 900px) {
+            .app {
+                height: auto;
+                min-height: 100vh;
+            }
+
+            .sidebar {
+                width: 220px;
+                height: auto;
+                min-height: 100vh;
+            }
+
+            .main {
+                min-width: 0;
+                padding: 12px;
+            }
+
+            .workspace {
+                height: auto;
+                min-height: calc(100vh - 71px);
+                flex-direction: column;
+                overflow: visible;
+            }
+
+            .database-panel {
+                width: 100%;
+                border-left: 0;
+                border-top: 1px solid var(--border);
+            }
+
+            .database-map {
+                max-width: 400px;
+                margin-inline: auto;
+            }
+
+            .suggestions {
+                flex-wrap: wrap;
+                overflow: visible;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .app {
+                flex-direction: column;
+            }
+
+            .sidebar {
+                width: 100%;
+                min-height: auto;
+                height: auto;
+                padding: 12px 15px;
+                border-right: 0;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .brand {
+                height: 42px;
+            }
+
+            .start-btn {
+                margin-top: 12px;
+            }
+
+            .timeline-title,
+            .timeline {
+                display: none;
+            }
+
+            .main {
+                width: 100%;
+                padding: 10px;
+            }
+
+            .status-bar {
+                height: auto;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .status {
+                font-size: 8px;
+                padding: 0 7px;
+            }
+
+            .chat-area {
+                padding: 14px 10px;
+            }
+
+            .answer-wrapper {
+                padding-left: 0;
+            }
+
+            .ai-avatar {
+                display: none;
+            }
+
+            .answer-card {
+                min-height: auto;
+                padding: 18px 14px;
+            }
+
+            .answer-number {
+                font-size: 54px;
+                letter-spacing: -2px;
+                overflow-wrap: anywhere;
+            }
+
+            .fresh-data {
+                margin-left: 4px;
+            }
+
+            .journey-section {
+                padding: 14px 8px;
+            }
+
+            .journey-step {
+                font-size: 6px;
+                letter-spacing: 0;
+                overflow-wrap: anywhere;
+            }
+
+            .suggestions button {
+                white-space: normal;
+                max-width: 100%;
+            }
+
+            .input-box {
+                padding: 12px 10px;
+            }
+
+            .input-hint {
+                display: none;
+            }
+
+            .database-panel {
+                padding: 16px 12px;
+            }
+
+            .database-map {
+                height: 290px;
+            }
+        }
+    </style>
 </head>
 
 <body>
-
 <div class="app">
 
-    <!-- ================= LEFT SIDEBAR ================= -->
-
+    <!-- LEFT SIDEBAR -->
     <aside class="sidebar">
-
         <div class="brand">
             <div class="brand-orb"></div>
-
             <div class="brand-name">
                 <strong>DATAMIND</strong>
                 <span>// AI</span>
             </div>
         </div>
 
-        <button class="start-btn">
+        <button class="start-btn" type="button">
             <i data-lucide="plus"></i>
-            Start Investigation
+            New Query
         </button>
 
-        <div class="timeline-title">
-            Conversation Timeline
-        </div>
+        <div class="timeline-title">Query History</div>
 
-        <div class="timeline">
-
+        <div class="timeline" id="queryTimeline">
             <div class="timeline-line"></div>
 
             <div class="timeline-item">
                 <div class="timeline-dot"></div>
                 <div class="timeline-card">
-                    NEW QUERY
-                    <span>↓</span>
+                    Start a new query
+                    <i data-lucide="plus"></i>
                 </div>
             </div>
-
-            <div class="timeline-item active">
-                <div class="timeline-dot"></div>
-
-                <div class="timeline-card active-card">
-                    <span>Jaipur Leads ↓</span>
-
-                    <div class="mini-bars">
-                        <i></i>
-                        <i></i>
-                        <i></i>
-                        <i></i>
-                        <i></i>
-                    </div>
-                </div>
-            </div>
-
-            <div class="timeline-item muted">
-                <div class="timeline-dot"></div>
-                <div class="timeline-text">
-                    Loan Performance ↓
-                </div>
-            </div>
-
-            <div class="timeline-item muted">
-                <div class="timeline-dot"></div>
-                <div class="timeline-text">
-                    Customer Analysis
-                </div>
-            </div>
-
-            <div class="timeline-item muted">
-                <div class="timeline-dot"></div>
-                <div class="timeline-text">
-                    Monthly Comparison
-                </div>
-            </div>
-
         </div>
-
     </aside>
 
-
-    <!-- ================= MAIN AREA ================= -->
-
+    <!-- MAIN AREA -->
     <main class="main">
 
-        <!-- TOP STATUS -->
-
+        <!-- STATUS BAR -->
         <div class="status-bar">
-
-            <div class="status active-status">
+            <div class="status active-status" id="aiStatus">
                 <span></span>
-                AI ONLINE
+                AI QUERY SYSTEM
             </div>
 
-            <div class="status active-status">
+            <div class="status" id="databaseStatus">
                 <span></span>
-                DATABASE LIVE
-            </div>
-
-            <div class="status">
-                <span></span>
-                RAG READY
+                DATABASE CHECKING
             </div>
 
             <div class="status">
                 <span></span>
-                QUERY VALIDATED
+                NATURAL LANGUAGE
             </div>
 
             <div class="status">
                 <span></span>
                 READ ONLY
             </div>
-
         </div>
-
 
         <section class="workspace">
 
-            <!-- ================= CHAT ================= -->
-
+            <!-- CHAT AREA -->
             <div class="chat-area">
-
                 <div class="conversation-title">
-                    Conversation Core
+                    Database Intelligence
                 </div>
 
-
-                <!-- AI ANSWER -->
-
                 <div class="answer-wrapper">
-
                     <div class="ai-avatar">
                         <i data-lucide="sparkles"></i>
                     </div>
 
                     <div class="answer-card">
-
                         <div class="answer-top">
-
-                            <span>
-                                AI Intelligence
-                            </span>
-
+                            <span>DataMind AI</span>
                             <div class="verified">
-                                <i data-lucide="check"></i>
-                                LIVE DATABASE VERIFIED
+                                <i data-lucide="shield-check"></i>
+                                DATABASE QUERY ASSISTANT
                             </div>
-
                         </div>
 
-                        <div class="answer-number">
-                            1,284
-                        </div>
+                        <div class="answer-number">Ready</div>
 
                         <div class="answer-title">
-                            Personal Loan Leads
+                            Ask your database in natural language
                         </div>
 
                         <div class="answer-location">
-                            Jaipur · Last Month
+                            English and Hinglish supported by your backend
                         </div>
 
                         <div class="growth">
-                            <strong>↑ 14.2%</strong>
-                            compared with previous month
+                            <strong>●</strong>
+                            Results will appear after query execution
                         </div>
-
                     </div>
-
                 </div>
-
 
                 <div class="fresh-data">
-                    Fresh update at 7:57 AM
+                    Connecting to database statistics...
                 </div>
 
-
-                <!-- ================= DATA JOURNEY ================= -->
-
+                <!-- DATA JOURNEY -->
                 <div class="journey-section">
-
-                    <div class="section-title">
-                        Data Journey
-                    </div>
+                    <div class="section-title">Query Workflow</div>
 
                     <div class="journey">
-
                         <div class="journey-step first">
-                            <div class="journey-circle"></div>
+                            <div class="journey-circle">
+                                <i data-lucide="message-square"></i>
+                            </div>
                             <span>QUESTION</span>
                         </div>
 
-                        <div class="journey-step completed">
+                        <div class="journey-step">
                             <div class="journey-circle">
-                                <i data-lucide="check"></i>
+                                <i data-lucide="brain"></i>
                             </div>
                             <span>UNDERSTAND</span>
                         </div>
 
-                        <div class="journey-step completed">
+                        <div class="journey-step">
                             <div class="journey-circle">
-                                <i data-lucide="check"></i>
+                                <i data-lucide="book-open"></i>
                             </div>
                             <span>RETRIEVE<br>CONTEXT</span>
                         </div>
 
-                        <div class="journey-step completed">
+                        <div class="journey-step">
                             <div class="journey-circle">
-                                <i data-lucide="check"></i>
+                                <i data-lucide="code"></i>
                             </div>
                             <span>GENERATE<br>QUERY</span>
                         </div>
 
-                        <div class="journey-step completed">
+                        <div class="journey-step">
                             <div class="journey-circle">
-                                <i data-lucide="check"></i>
+                                <i data-lucide="shield-check"></i>
                             </div>
                             <span>SECURITY<br>CHECK</span>
                         </div>
@@ -238,116 +447,89 @@
                             <div class="journey-circle">
                                 <i data-lucide="database"></i>
                             </div>
-                            <span>LIVE<br>DATABASE</span>
+                            <span>DATABASE</span>
                         </div>
 
                         <div class="journey-step">
-                            <div class="journey-circle empty"></div>
+                            <div class="journey-circle empty">
+                                <i data-lucide="check-circle"></i>
+                            </div>
                             <span>ANSWER</span>
                         </div>
-
                     </div>
-
                 </div>
 
-
-                <!-- ================= SUGGESTIONS ================= -->
-
+                <!-- QUERY SUGGESTIONS -->
                 <div class="suggestions">
-
-                    <button>
-                        Jaipur se kitne leads aaye?
-                    </button>
-
-                    <button>
-                        Which city generated the most leads?
-                    </button>
-
-                    <button>
-                        Compare personal vs home loan leads
-                    </button>
-
+                    <button type="button">Show all customers</button>
+                    <button type="button">How many customers are there?</button>
+                    <button type="button">Show customer count by city</button>
+                    <button type="button">Show customer names and emails</button>
                 </div>
 
-
-                <!-- ================= CHAT INPUT ================= -->
-
+                <!-- QUERY INPUT -->
                 <div class="input-box">
+                    <div class="database-selector-wrap">
+                        <label for="databaseSelector" class="input-hint">
+                            Select database
+                        </label>
+
+                        <select id="databaseSelector" aria-label="Select database">
+                            <option value="postgresql">PostgreSQL</option>
+                            <option value="mongodb">MongoDB</option>
+                        </select>
+                    </div>
 
                     <input
                         type="text"
                         id="queryInput"
                         placeholder="Ask your database anything..."
+                        autocomplete="off"
+                        aria-label="Enter your database question"
                     >
 
                     <div class="input-bottom">
-
                         <div class="input-hint">
-                            Natural language • English / Hinglish
+                            Natural language · English / Hinglish
                         </div>
 
                         <div class="input-actions">
-
-                            <button class="icon-btn">
-                                <i data-lucide="paperclip"></i>
-                            </button>
-
-                            <button class="icon-btn">
-                                <i data-lucide="mic"></i>
-                            </button>
-
-                            <button class="execute-btn" id="executeBtn">
+                            <button class="execute-btn" id="executeBtn" type="button">
                                 Execute Query
                                 <i data-lucide="send"></i>
                             </button>
-
                         </div>
-
                     </div>
-
                 </div>
 
+                <!-- DYNAMIC QUERY ANSWER -->
+                <div id="dynamicResult" hidden aria-live="polite"></div>
             </div>
 
-
-            <!-- ================= RIGHT DATABASE PANEL ================= -->
-
+            <!-- DATABASE PANEL -->
             <aside class="database-panel">
 
                 <div class="database-title">
-
-                    <span>
-                        Database Intelligence
-                    </span>
-
-                    <i data-lucide="chevron-up"></i>
-
+                    <span>Database Intelligence</span>
+                    <i data-lucide="database"></i>
                 </div>
 
-
-                <!-- DATABASE BADGES -->
-
                 <div class="badges">
-
-                    <span class="badge green">
-                        DATABASE ● LIVE
+                    <span class="badge green" id="connectionBadge">
+                        CONNECTION CHECKING
                     </span>
 
-                    <span class="badge">
+                    <span class="badge" id="selectedDbBadge">
                         POSTGRESQL
                     </span>
 
                     <span class="badge">
                         READ ONLY
                     </span>
-
                 </div>
 
-
-                <!-- DATABASE MAP -->
-
+                <!-- DATABASE DIAGRAM -->
                 <div class="database-map">
-
                     <div class="orbit orbit-1"></div>
                     <div class="orbit orbit-2"></div>
 
@@ -358,132 +540,81 @@
                     <div class="connection connection-5"></div>
 
                     <div class="database-core">
-                        <span>ENTERPRISE</span>
-                        <strong>CRM</strong>
+                        <span>DATABASE</span>
+                        <strong id="databaseCoreLabel">DB</strong>
                     </div>
 
-                    <div class="table-node leads">
-                        LEADS
-                    </div>
-
-                    <div class="table-node loans">
-                        LOANS
-                    </div>
-
-                    <div class="table-node customers">
+                    <div class="table-node leads" data-table="customers">
                         CUSTOMERS
                     </div>
 
-                    <div class="table-node locations">
-                        LOCATIONS
+                    <div class="table-node loans" data-table="customers">
+                        RECORDS
                     </div>
 
-                    <div class="table-node applications">
-                        APPLICATIONS
+                    <div class="table-node customers" data-table="customers">
+                        CUSTOMERS
                     </div>
 
+                    <div class="table-node locations" data-table="customers">
+                        CITIES
+                    </div>
+
+                    <div class="table-node applications" data-table="customers">
+                        QUERY
+                    </div>
                 </div>
 
-
-                <!-- RELATION -->
-
+                <!-- ACTIVE DATA PATH -->
                 <div class="relation-card">
-
-                    <div class="relation-label">
-                        ACTIVE DATA PATH
-                    </div>
+                    <div class="relation-label">ACTIVE DATABASE</div>
 
                     <div class="relation">
-                        <span>LEADS</span>
+                        <span id="relationDatabase">POSTGRESQL</span>
                         <b>→</b>
-                        <span>LOCATIONS</span>
-                        <b>→</b>
-                        <span>LOAN TYPE</span>
+                        <span id="relationTable">CUSTOMERS</span>
                     </div>
-
                 </div>
 
-
                 <!-- QUERY TRANSPARENCY -->
-
                 <div class="query-card">
-
                     <div class="query-header">
-
-                        <span>
-                            QUERY TRANSPARENCY
-                        </span>
-
+                        <span>QUERY TRANSPARENCY</span>
                         <div>
                             <i data-lucide="clock-3"></i>
-                            142 ms
+                            <span id="queryExecutionTime">Not measured</span>
                         </div>
-
                     </div>
 
-
-                    <div class="sql">
-
-                        <div>
-                            <span class="keyword">SELECT</span>
-                            COUNT(*)
-                        </div>
-
-                        <div>
-                            <span class="keyword">FROM</span>
-                            leads
-                        </div>
-
-                        <div>
-                            <span class="keyword">WHERE</span>
-                            city =
-                            <span class="string">'Jaipur'</span>
-                        </div>
-
-                        <div>
-                            <span class="keyword">AND</span>
-                            loan_type =
-                            <span class="string">'Personal Loan'</span>;
-                        </div>
-
+                    <div class="sql" id="sqlPreview">
+                        <div>Generated SQL or MongoDB query</div>
+                        <div>will appear here after execution.</div>
                     </div>
-
 
                     <div class="query-status">
-
                         <span>
                             <i data-lucide="shield-check"></i>
                             READ ONLY
                         </span>
 
                         <span>
-                            <i data-lucide="check"></i>
-                            VALIDATED
+                            <i data-lucide="check-circle"></i>
+                            API STATUS
                         </span>
-
-                        <span>
-                            <i data-lucide="check"></i>
-                            SAFE
-                        </span>
-
                     </div>
-
                 </div>
 
             </aside>
-
         </section>
-
     </main>
-
 </div>
-
 
 <script src="script.js"></script>
 
 <script>
-    lucide.createIcons();
+    if (window.lucide) {
+        window.lucide.createIcons();
+    }
 </script>
-
 </body>
 </html>
