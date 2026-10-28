@@ -1,4 +1,3 @@
-
 "use strict";
 
 const API = "http://127.0.0.1:8000";
@@ -28,6 +27,7 @@ function updateDatabaseUI() {
     if (relationDb) relationDb.textContent = isMongo ? "MONGODB" : "POSTGRESQL";
 
     const status = $("#databaseStatus");
+
     if (status) {
         status.classList.remove("active-status");
         status.querySelector("span")?.style.setProperty("background", "#637086");
@@ -169,7 +169,7 @@ function showQueryResult(data) {
     addResultText(
         box,
         "p",
-        `Question: ${data.question || ""}`
+        `Question: ${data.question || currentQuestion}`
     );
 
     const isMongo = String(data.database || selectedDatabase)
@@ -192,9 +192,10 @@ function showQueryResult(data) {
     box.appendChild(pre);
 
     renderResults(box, data.results);
-
     updateDashboardFromQuery(data);
 }
+
+let currentQuestion = "";
 
 // ---------------- DASHBOARD QUERY PANEL ----------------
 
@@ -229,7 +230,6 @@ function updateDashboardFromQuery(data) {
         queryBox.appendChild(pre);
     }
 
-    // Do not invent execution time if the backend does not return it.
     if (queryTime) {
         const actualTime = data.execution_time_ms ?? data.execution_time;
         queryTime.textContent = actualTime != null
@@ -238,7 +238,12 @@ function updateDashboardFromQuery(data) {
     }
 
     if (badge) badge.textContent = isMongo ? "MONGODB" : "POSTGRESQL";
-    if (relationTable) relationTable.textContent = isMongo ? "CUSTOMERS COLLECTION" : "CUSTOMERS";
+
+    if (relationTable) {
+        relationTable.textContent = isMongo
+            ? "CUSTOMERS COLLECTION"
+            : "CUSTOMERS";
+    }
 
     if (connectionBadge) {
         connectionBadge.textContent = "QUERY SUCCESSFUL";
@@ -314,6 +319,7 @@ async function executeQuery(questionOverride) {
         return;
     }
 
+    currentQuestion = question;
     selectedDatabase = databaseSelector?.value || selectedDatabase;
 
     executeBtn.disabled = true;
@@ -323,10 +329,13 @@ async function executeQuery(questionOverride) {
     const startedAt = performance.now();
 
     try {
+        console.log("Sending query:", question);
+
         const response = await fetch(`${API}/chat`, {
             method: "POST",
             headers: {
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "Accept": "application/json"
             },
             body: JSON.stringify({
                 question,
@@ -335,11 +344,22 @@ async function executeQuery(questionOverride) {
             })
         });
 
-        const data = await response.json();
+        const responseText = await response.text();
+        let data;
 
-        if (!response.ok || !data.success) {
+        try {
+            data = JSON.parse(responseText);
+        } catch {
             throw new Error(
-                data.error || data.detail || "Query failed"
+                `Invalid API response: ${responseText.slice(0, 180)}`
+            );
+        }
+
+        console.log("API response:", data);
+
+        if (!response.ok || data.success === false) {
+            throw new Error(
+                data.error || data.detail || `Query failed (${response.status})`
             );
         }
 
@@ -356,11 +376,15 @@ async function executeQuery(questionOverride) {
             conversationHistory.shift();
         }
 
-        showQueryResult(data);
+        showQueryResult({
+            ...data,
+            question: data.question || question
+        });
+
         addQueryToTimeline(question, data);
 
-        // Show measured request duration only when API doesn't provide its own.
         const timeElement = $("#queryExecutionTime");
+
         if (
             timeElement &&
             data.execution_time_ms == null &&
@@ -372,6 +396,8 @@ async function executeQuery(questionOverride) {
         input.value = "";
 
     } catch (error) {
+        console.error("Query execution failed:", error);
+
         showMessage(
             `Request failed: ${error.message}. Check the backend and database connection.`,
             true
@@ -394,9 +420,6 @@ async function executeQuery(questionOverride) {
 
 async function loadDashboardStats() {
     const fresh = $(".fresh-data");
-    const number = $(".answer-number");
-    const title = $(".answer-title");
-    const location = $(".answer-location");
     const badge = $("#connectionBadge");
     const status = $("#databaseStatus");
 
@@ -413,20 +436,6 @@ async function loadDashboardStats() {
             throw new Error(data.error || "Stats unavailable");
         }
 
-        if (number && data.total_customers != null) {
-            number.textContent =
-                Number(data.total_customers).toLocaleString();
-        }
-
-        if (title) {
-            title.textContent = "Total Customers";
-        }
-
-        if (location && data.total_cities != null) {
-            location.textContent =
-                `${data.total_cities} unique cities`;
-        }
-
         if (fresh) {
             fresh.textContent =
                 `Live statistics · ${data.database || "Database"} connected`;
@@ -438,8 +447,7 @@ async function loadDashboardStats() {
 
         if (status) {
             status.classList.add("active-status");
-            const label = status.childNodes;
-            status.title = "Database statistics API responded successfully";
+            status.title = "Database connected successfully";
         }
 
         console.log("Dashboard stats loaded:", data);
@@ -454,20 +462,27 @@ async function loadDashboardStats() {
         if (badge) {
             badge.textContent = "STATUS UNAVAILABLE";
         }
+
+        if (status) {
+            status.classList.remove("active-status");
+            status.title = error.message;
+        }
     }
 }
 
 // ---------------- BUTTONS & SUGGESTIONS ----------------
 
+// Execute button: attach only once.
 executeBtn?.addEventListener("click", () => executeQuery());
 
 input?.addEventListener("keydown", event => {
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         executeQuery();
     }
 });
 
+// Suggestions: fill the input; user can execute the query.
 document.querySelectorAll(".suggestions button").forEach(button => {
     button.addEventListener("click", () => {
         if (!input) return;
@@ -477,10 +492,22 @@ document.querySelectorAll(".suggestions button").forEach(button => {
     });
 });
 
-// Start a new conversation without deleting saved database records.
+// Other suggestion buttons, if present.
+document.querySelectorAll("[data-question]").forEach(button => {
+    button.addEventListener("click", () => {
+        if (!input) return;
+
+        input.value = button.dataset.question;
+        input.focus();
+    });
+});
+
+// ---------------- START NEW CONVERSATION ----------------
+
 $(".start-btn")?.addEventListener("click", () => {
     conversationHistory = [];
     queryHistory = [];
+    currentQuestion = "";
 
     if (input) {
         input.value = "";
@@ -488,6 +515,7 @@ $(".start-btn")?.addEventListener("click", () => {
     }
 
     const box = $("#dynamicResult");
+
     if (box) {
         box.hidden = true;
         box.replaceChildren();
@@ -509,10 +537,17 @@ $(".start-btn")?.addEventListener("click", () => {
     const location = $(".answer-location");
 
     if (number) number.textContent = "Ready";
-    if (title) title.textContent = "Ask your database in natural language";
-    if (location) location.textContent = "Submit a question to see results";
+
+    if (title) {
+        title.textContent = "Ask your database in natural language";
+    }
+
+    if (location) {
+        location.textContent = "Submit a question to see results";
+    }
 
     const queryBox = $("#sqlPreview");
+
     if (queryBox) {
         queryBox.textContent = "Generated query will appear here.";
     }
@@ -526,13 +561,66 @@ $(".start-btn")?.addEventListener("click", () => {
 
     updateDatabaseUI();
 });
+// MORE QUERY SUGGESTIONS
+const extraQueries = [
+    "Show all customers",
+    "Show customer names and cities",
+    "Show customers from Agra",
+    "Show customers from Delhi",
+    "Show customers from Mumbai",
+    "Show customers from Jaipur",
+    "Show customers aged 20",
+    "Show customers older than 25",
+    "Show customers younger than 25",
+    "Show customers aged between 20 and 30",
+    "Find customers named Karishma",
+    "Show customers whose name contains A",
+    "Show customers sorted by name",
+    "Show customers sorted by age",
+    "Show the youngest customer",
+    "Show the oldest customer",
+    "How many customers are there?",
+    "Count customers in Agra",
+    "Count customers in Delhi",
+    "Count customers in each city",
+    "Show the average customer age",
+    "Show the minimum customer age",
+    "Show the maximum customer age",
+    "Show the oldest 3 customers",
+    "Show the 5 youngest customers",
+    "List all unique cities",
+    "Show customers above average age",
+    "Show customers with their email addresses",
+    "Give me a summary of all customers",
+    "Show customers whose age is 25"
+];
 
-// Database diagram nodes
+const extraSuggestionsBox = document.querySelector(".suggestions");
+
+if (extraSuggestionsBox) {
+    extraSuggestionsBox.replaceChildren();
+
+    extraQueries.forEach(question => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = question;
+
+        button.addEventListener("click", () => {
+            if (!input) return;
+            input.value = question;
+            input.focus();
+        });
+
+        extraSuggestionsBox.appendChild(button);
+    });
+}
+
+// ---------------- DATABASE DIAGRAM NODES ----------------
+
 document.querySelectorAll(".table-node").forEach(node => {
     node.addEventListener("click", () => {
-        if (!input) return;
-
         const database = selectedDatabase.toLowerCase();
+
         const question = database.includes("mongo")
             ? "Show all customers"
             : "Show all customers with their name, city, age and email";
@@ -567,26 +655,3 @@ if (window.lucide) {
 }
 
 console.log("DataMind AI initialized");
-document.addEventListener("DOMContentLoaded", () => {
-    const btn = document.getElementById("executeBtn");
-    const input = document.getElementById("queryInput");
-
-    if (btn && input) {
-        btn.addEventListener("click", () => {
-            if (typeof executeQuery === "function") {
-                executeQuery();
-            } else {
-                console.error("executeQuery function missing!");
-                alert("Query function load nahi hua. script.js check karo.");
-            }
-        });
-
-        input.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                btn.click();
-            }
-        });
-    } else {
-        console.error("Execute button ya query input nahi mila!");
-    }
-});
